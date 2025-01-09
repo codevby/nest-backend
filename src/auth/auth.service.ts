@@ -1,9 +1,13 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Body, Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+
+import * as bcryptjs from 'bcryptjs';
+
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateAuthDto } from './dto/update-auth.dto';
-import { InjectModel } from '@nestjs/mongoose';
+import { LoginDto } from './dto/login.dto';
 import { User } from './entities/user.entity';
-import { Model } from 'mongoose';
 
 @Injectable()
 export class AuthService {
@@ -13,22 +17,57 @@ export class AuthService {
     private userModel: Model<User>
   ) { }
 
-  async create(createAuthDto: CreateUserDto): Promise<User> {
-
-    //1- Encriptar contraseña
-    //2- Guardar en BD
-    //3- Generar el JWT
-    //4- Manejar exepciones
+  async create(createUserDto: CreateUserDto): Promise<User> {
 
     try {
-      const newUser = new this.userModel(createAuthDto);
-      return await newUser.save();
+
+      //1- Encriptar contraseña
+      const { password, ...userData } = createUserDto;
+
+      const newUser = new this.userModel({
+        password: bcryptjs.hashSync(password, 10),
+        ...userData
+      });
+
+      await newUser.save();
+
+      const { password: _, ...user } = newUser.toJSON();
+
+      return user;
+      //2- Guardar en BD
+      //3- Generar el JWT
+      //4- Manejar exepciones
+
+      //const newUser = new this.userModel(createAuthDto);
     } catch (error) {
       if (error.code === 11000) {
-        throw new BadRequestException(`${createAuthDto.email} already exists!`);
+        throw new BadRequestException(`${createUserDto.email} already exists!`);
       }
       throw new InternalServerErrorException('Something terrible happened');
     }
+
+  }
+
+  async login(loginDto: LoginDto) {
+
+    const { email, password } = loginDto;
+
+    const user = await this.userModel.findOne({ email });
+
+    if (!user) {
+      throw new UnauthorizedException('Not Valid Credentials');
+    }
+
+    if (!bcryptjs.compareSync(password, user.password)) {
+      throw new UnauthorizedException('Not Valid Credentials');
+    }
+
+    const { password: _, ...rest } = user.toJSON();
+
+    return {
+      user: rest,
+      token: 'ABC-123'
+    };
 
   }
 
